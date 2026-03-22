@@ -4,6 +4,8 @@
 
 RipWave is a minimal desktop tool for ripping audio (WAV) or downloading video (MP4) from YouTube, Instagram, TikTok, Twitter/X, Vimeo, SoundCloud, and [1000+ other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) — with a clean, fast UI that gets out of your way.
 
+**[Project page →](https://webdev.dvlce.ca/webdev/ripwave)**
+
 ---
 
 ## Features
@@ -76,9 +78,9 @@ Outputs a standalone `dist/RipWave.exe` — no Python required to run it.
 
 ---
 
-## More tools like this
+## Related
 
-Built by [dvlce.ca](https://dvlce.ca) — see [webdev.dvlce.ca](https://webdev.dvlce.ca) for the full project showcase.
+- [webdev.dvlce.ca/webdev/ripwave](https://webdev.dvlce.ca/webdev/ripwave) — project page
 
 ---
 
