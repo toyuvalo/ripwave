@@ -1,0 +1,28 @@
+# Binaries (downloaded by installer, not committed)
+yt-dlp.exe
+ffmpeg.exe
+ffprobe.exe
+
+# PyInstaller output
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user

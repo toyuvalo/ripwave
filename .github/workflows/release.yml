@@ -1,0 +1,60 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build exe
+        run: |
+          pyinstaller --onefile --windowed `
+            --name RipWave `
+            --icon assets/icon.ico `
+            --add-data "assets/icon.ico;assets" `
+            ripwave.py
+
+      - name: Download yt-dlp
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" `
+            -OutFile "dist/yt-dlp.exe"
+
+      - name: Download ffmpeg
+        run: |
+          $tmp = "$env:TEMP\ffmpeg.zip"
+          Invoke-WebRequest `
+            -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" `
+            -OutFile $tmp
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead($tmp)
+          $entry = $zip.Entries | Where-Object { $_.Name -eq "ffmpeg.exe" } | Select-Object -First 1
+          [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "dist/ffmpeg.exe", $true)
+          $zip.Dispose()
+
+      - name: Package zip
+        run: |
+          Compress-Archive -Path dist/* -DestinationPath dist/RipWave-windows.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/RipWave-windows.zip
+          generate_release_notes: true
