@@ -16,12 +16,13 @@ RipWave is a minimal desktop tool for ripping audio (WAV) or downloading video (
 - **Auto-updates yt-dlp** on every launch — no stale downloads
 - **Files land in Downloads** — folder opens automatically when done
 - **No console window** — clean, distraction-free experience
+- **Windows · macOS · Linux** — one app, all platforms
 
 ---
 
 ## Install
 
-### Option 1 — One-click installer (recommended)
+### Windows
 
 Download and run **`install.bat`** from the [latest release](../../releases/latest). It will:
 
@@ -30,12 +31,36 @@ Download and run **`install.bat`** from the [latest release](../../releases/late
 3. Download `ffmpeg.exe`
 4. Create a desktop shortcut
 
-### Option 2 — Run from source
+### macOS
 
 ```bash
 git clone https://github.com/toyuvalo/ripwave.git
 cd ripwave
-install.bat
+bash install-mac.sh
+```
+
+The installer:
+- Installs `yt-dlp` and `ffmpeg` via Homebrew (installs Homebrew if missing)
+- Creates a **`RipWave.command`** double-click launcher on your Desktop
+
+### Linux
+
+```bash
+git clone https://github.com/toyuvalo/ripwave.git
+cd ripwave
+bash install-linux.sh
+```
+
+The installer:
+- Installs `yt-dlp` via pip and `ffmpeg` via your system package manager
+- Creates a **`RipWave.desktop`** launcher on your Desktop and in the app menu
+
+### Run from source (any OS)
+
+```bash
+git clone https://github.com/toyuvalo/ripwave.git
+cd ripwave
+python3 ripwave.py
 ```
 
 ---
@@ -56,7 +81,17 @@ YouTube · Instagram · TikTok · Twitter/X · Vimeo · SoundCloud · Twitch · 
 
 ---
 
-## Build from source
+## Uninstall
+
+| OS | Command |
+|----|---------|
+| Windows | Delete `%LOCALAPPDATA%\RipWave\` and the Desktop shortcut |
+| macOS | `bash uninstall-mac.sh` |
+| Linux | `bash uninstall-linux.sh` |
+
+---
+
+## Build from source (Windows)
 
 Requires Python 3.8+ and PyInstaller.
 
@@ -72,9 +107,9 @@ Outputs a standalone `dist/RipWave.exe` — no Python required to run it.
 
 | Tool | Purpose | Auto-installed |
 |------|---------|---------------|
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Download engine | ✓ |
-| [ffmpeg](https://ffmpeg.org) | Audio/video conversion | ✓ |
-| Python 3.8+ | Runtime (source only) | prompted |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Download engine | ✓ (Windows); via brew/pip on mac/linux |
+| [ffmpeg](https://ffmpeg.org) | Audio/video conversion | ✓ (Windows); via brew/pkg manager on mac/linux |
+| Python 3.8+ | Runtime | prompted |
 
 ---
 

@@ -11,8 +11,17 @@ if getattr(sys, "frozen", False):
 else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-YTDLP  = os.path.join(SCRIPT_DIR, "yt-dlp.exe")
+# On Windows yt-dlp.exe and ffmpeg.exe are bundled next to the script.
+# On macOS/Linux they are system-installed (brew/apt/pip).
+if sys.platform == "win32":
+    YTDLP = os.path.join(SCRIPT_DIR, "yt-dlp.exe")
+else:
+    YTDLP = "yt-dlp"
+
 OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
+
+# Suppress console windows on Windows; harmless 0 on macOS/Linux
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 VERSION = "1.0.0"
 
@@ -219,7 +228,7 @@ class App(tk.Tk):
             proc = subprocess.run(
                 [YTDLP, "-U"],
                 capture_output=True, text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=_NO_WINDOW,
             )
             out = (proc.stdout + proc.stderr).strip()
             last_line = [l for l in out.splitlines() if l.strip()][-1] if out else ""
@@ -287,8 +296,10 @@ class App(tk.Tk):
         threading.Thread(target=self._run, args=(target, self._mode), daemon=True).start()
 
     def _run(self, target, mode):
-        base = [YTDLP, "--restrict-filenames", "--ffmpeg-location", SCRIPT_DIR,
-                "-o", os.path.join(OUTDIR, "%(title)s.%(ext)s")]
+        # On Windows ffmpeg.exe is bundled in SCRIPT_DIR; on macOS/Linux it's on PATH
+        ffmpeg_args = ["--ffmpeg-location", SCRIPT_DIR] if sys.platform == "win32" else []
+        base = [YTDLP, "--restrict-filenames"] + ffmpeg_args + \
+               ["-o", os.path.join(OUTDIR, "%(title)s.%(ext)s")]
         if mode == "audio":
             cmd = base + ["-f", "bestaudio", "--extract-audio", "--audio-format", "wav", target]
         elif mode == "mp3":
@@ -303,7 +314,7 @@ class App(tk.Tk):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=_NO_WINDOW,
             )
             for line in proc.stdout:
                 line = line.rstrip()
@@ -325,7 +336,12 @@ class App(tk.Tk):
         self._reset_btn()
         self.url_entry.delete(0, "end")
         self._focus_out(None)
-        os.startfile(OUTDIR)
+        if sys.platform == "win32":
+            os.startfile(OUTDIR)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", OUTDIR])
+        else:
+            subprocess.run(["xdg-open", OUTDIR])
 
     def _done_err(self, msg=""):
         self._stop_spin()
