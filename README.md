@@ -4,7 +4,7 @@
 
 RipWave is a minimal desktop tool for ripping audio (WAV) or downloading video (MP4) from YouTube, Instagram, TikTok, Twitter/X, Vimeo, SoundCloud, and [1000+ other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) — with a clean, fast UI that gets out of your way.
 
-**[Project page →](https://webdev.dvlce.ca/webdev/ripwave)**
+**[Project page →](https://webdev.dvlce.ca/webdev/ripwave)** · **[⬇ One-click Windows install](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-Setup.exe)**
 
 ---
 
@@ -22,14 +22,13 @@ RipWave is a minimal desktop tool for ripping audio (WAV) or downloading video (
 
 ## Install
 
-### Windows
+### Windows — one-click
 
-Download and run **`install.bat`** from the [latest release](../../releases/latest). It will:
+**[⬇ Download RipWave-Setup.exe](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-Setup.exe)**
 
-1. Check for Python 3.8+ and prompt if missing
-2. Download the latest `yt-dlp.exe`
-3. Download `ffmpeg.exe`
-4. Create a desktop shortcut
+Double-click the file. It installs everything (RipWave, `yt-dlp`, `ffmpeg`), creates a desktop shortcut, and launches the app. No Python needed, no UAC prompt, no terminal.
+
+<sub>Prefer the scripted install? The [latest release](../../releases/latest) also ships `install.bat` (needs Python 3.8+) and a portable `RipWave-windows.zip`.</sub>
 
 ### macOS
 
@@ -85,7 +84,7 @@ YouTube · Instagram · TikTok · Twitter/X · Vimeo · SoundCloud · Twitch · 
 
 | OS | Command |
 |----|---------|
-| Windows | Delete `%LOCALAPPDATA%\RipWave\` and the Desktop shortcut |
+| Windows | **Settings → Apps → RipWave → Uninstall** (or delete `%LOCALAPPDATA%\RipWave\` if you used `install.bat`) |
 | macOS | `bash uninstall-mac.sh` |
 | Linux | `bash uninstall-linux.sh` |
 

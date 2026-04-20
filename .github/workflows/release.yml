@@ -23,7 +23,7 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
 
-      - name: Build exe
+      - name: Build RipWave.exe
         run: |
           pyinstaller --onefile --windowed `
             --name RipWave `
@@ -49,12 +49,31 @@ jobs:
           [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "dist/ffmpeg.exe", $true)
           $zip.Dispose()
 
-      - name: Package zip
+      - name: Resolve version from tag
+        id: ver
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build one-click installer (Inno Setup)
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & "$iscc" "/DMyAppVersion=${{ steps.ver.outputs.version }}" installer\ripwave.iss
+          if (-not (Test-Path "installer\RipWave-Setup.exe")) {
+            throw "RipWave-Setup.exe was not produced"
+          }
+
+      - name: Package portable zip
         run: |
           Compress-Archive -Path dist/* -DestinationPath dist/RipWave-windows.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/RipWave-windows.zip
+          files: |
+            installer/RipWave-Setup.exe
+            dist/RipWave-windows.zip
           generate_release_notes: true
