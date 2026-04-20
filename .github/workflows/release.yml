@@ -125,4 +125,4 @@ jobs:
             installer/RipWave-Setup.exe
             dist/RipWave-windows.zip
           generate_release_notes: ${{ steps.meta.outputs.rolling == 'false' }}
-          body: ${{ steps.meta.outputs.rolling == 'true' && 'Rolling build from latest master. One-click installer: RipWave-Setup.exe' || '' }}
+          body: ${{ steps.meta.outputs.rolling == 'true' && 'Rolling build from latest master — one-click installer RipWave-Setup.exe' || '' }}
