@@ -21,6 +21,7 @@ echo Building ripwave.exe...
 pyinstaller --onefile --windowed ^
     --name RipWave ^
     --icon assets\icon.ico ^
+    --version-file version_info.txt ^
     --add-data "assets\icon.ico;assets" ^
     ripwave.py
 

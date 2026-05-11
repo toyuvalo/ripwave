@@ -4,11 +4,16 @@
 ; %LOCALAPPDATA%\RipWave, bundles yt-dlp.exe and ffmpeg.exe, and creates
 ; a desktop shortcut. Runs without admin (PrivilegesRequired=lowest), so
 ; there is no UAC prompt — true one-click install.
+;
+; Build flags:
+;   /DPERSONAL_BUILD    Adds an extra "youtubedownloader" Start Menu alias.
+;                       Used for Yuval's personal machine only — never set in CI.
 
 #define MyAppName      "RipWave"
 #define MyAppPublisher "RipWave"
 #define MyAppURL       "https://github.com/toyuvalo/ripwave"
 #define MyAppExeName   "RipWave.exe"
+#define MyAppComment   "Download YouTube, Instagram, TikTok, SoundCloud — audio/video ripper (yt-dlp)"
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
@@ -55,9 +60,16 @@ Source: "..\dist\ffmpeg.exe";   DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\icon.ico";   DestDir: "{app}\assets"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"
+; Top-level Start Menu entry — surfaces in Windows Search without nesting
+Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Comment: "{#MyAppComment}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Comment: "{#MyAppComment}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Comment: "{#MyAppComment}"; Tasks: desktopicon
+#ifdef PERSONAL_BUILD
+; Personal-machine alias — search "youtubedownloader" finds RipWave.
+; Only added when built with: ISCC.exe /DPERSONAL_BUILD installer\ripwave.iss
+Name: "{userprograms}\youtubedownloader"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Comment: "{#MyAppComment}"
+#endif
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent

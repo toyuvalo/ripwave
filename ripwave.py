@@ -8,8 +8,23 @@ import sys
 # ── Paths (works both as .py and PyInstaller .exe) ────────────────────────────
 if getattr(sys, "frozen", False):
     SCRIPT_DIR = os.path.dirname(sys.executable)
+    # PyInstaller --add-data unpacks bundled assets under sys._MEIPASS
+    BUNDLE_DIR = getattr(sys, "_MEIPASS", SCRIPT_DIR)
 else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    BUNDLE_DIR = SCRIPT_DIR
+
+ICON_PATH = os.path.join(BUNDLE_DIR, "assets", "icon.ico")
+
+# Windows-only: give the process an explicit AppUserModelID so the taskbar
+# shows the RipWave icon (and groups under RipWave, not python.exe).
+# Must run BEFORE any Tk window is realized.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ca.dvlce.ripwave")
+    except Exception:
+        pass
 
 # On Windows yt-dlp.exe and ffmpeg.exe are bundled next to the script.
 # On macOS/Linux they are system-installed (brew/apt/pip).
@@ -23,7 +38,7 @@ OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
 # Suppress console windows on Windows; harmless 0 on macOS/Linux
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 C_BG      = "#090909"
@@ -44,7 +59,12 @@ SPIN_FRAMES = ["⠋", "⠙", "⠸", "⠴", "⠦", "⠇"]
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Downloader")
+        self.title("RipWave")
+        try:
+            if os.path.exists(ICON_PATH):
+                self.iconbitmap(default=ICON_PATH)
+        except Exception:
+            pass
         self.configure(bg=C_BG)
         self.resizable(False, False)
 
@@ -256,7 +276,7 @@ class App(tk.Tk):
         self.btn_audio.config(**(on  if self._mode == "audio" else off))
         self.btn_mp3.config(  **(on  if self._mode == "mp3"   else off))
         self.btn_video.config(**(on  if self._mode == "video" else off))
-        labels = {"audio": ("→WAV", "→ WAV"), "mp3": ("→MP3", "→ MP3"), "video": ("→MP4", "→ MP4")}
+        labels = {"audio": ("→WAV", "RipWave — WAV"), "mp3": ("→MP3", "RipWave — MP3"), "video": ("→MP4", "RipWave — MP4")}
         self.title_lbl.config(text=labels[self._mode][0])
         self.title(labels[self._mode][1])
 
