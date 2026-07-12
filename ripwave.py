@@ -1,7 +1,10 @@
 import tkinter as tk
 from tkinter import font as tkfont
+import re
+import shutil
 import subprocess
 import threading
+import time
 import os
 import sys
 
@@ -38,7 +41,114 @@ OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
 # Suppress console windows on Windows; harmless 0 on macOS/Linux
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
+
+# ── Output verification ───────────────────────────────────────────────────────
+# yt-dlp exiting 0 is NOT proof a playable file landed in Downloads: a failed merge,
+# an aborted post-process, or a 0-byte partial all exit 0. Before we tell the user
+# "✓ saved to Downloads", we find the file it actually wrote and open the bytes.
+
+MIN_BYTES = 16 * 1024  # a real rip is never smaller than this
+
+EXT_FOR_MODE = {"audio": ".wav", "mp3": ".mp3", "video": ".mp4"}
+
+# Container signatures — catches a truncated write or a failed merge/convert that
+# left a file of the right NAME but the wrong (or no) contents.
+_MAGIC = {
+    ".wav": lambda h: h[:4] == b"RIFF" and h[8:12] == b"WAVE",
+    ".mp3": lambda h: h[:3] == b"ID3" or (len(h) > 1 and h[0] == 0xFF and (h[1] & 0xE0) == 0xE0),
+    ".mp4": lambda h: h[4:8] == b"ftyp",
+}
+
+# The lines yt-dlp prints naming the file it wrote (we already stream these to the log).
+_DEST_PATTERNS = (
+    re.compile(r"^\[[\w:]+\]\s+Destination:\s*(.+)$"),
+    re.compile(r'^\[Merger\]\s+Merging formats into\s+"(.+)"\s*$'),
+    re.compile(r'^\[MoveFiles\]\s+Moving file\s+".+"\s+to\s+"(.+)"\s*$'),
+    re.compile(r"^\[download\]\s+(.+?)\s+has already been downloaded"),
+)
+
+
+class OutputError(Exception):
+    """yt-dlp claimed success but the artifact on disk is missing or unplayable."""
+
+
+def _extract_dest(line: str) -> str | None:
+    for pat in _DEST_PATTERNS:
+        m = pat.match(line.strip())
+        if m:
+            return m.group(1).strip().strip('"')
+    return None
+
+
+def _ffprobe_bin() -> str | None:
+    """ffprobe.exe ships next to the bundled ffmpeg.exe on Windows; else look on PATH."""
+    if sys.platform == "win32":
+        local = os.path.join(SCRIPT_DIR, "ffprobe.exe")
+        if os.path.exists(local):
+            return local
+    return shutil.which("ffprobe")
+
+
+def _resolve_output(dests: list[str], mode: str, started: float) -> str:
+    """Work out which file yt-dlp actually produced (it templates the name from the title)."""
+    want = EXT_FOR_MODE[mode]
+
+    # Preferred: the last path yt-dlp printed with the extension we asked for.
+    for cand in reversed(dests):
+        if cand.lower().endswith(want) and os.path.exists(cand):
+            return cand
+
+    # Fallback: newest file of that type written to Downloads during this run.
+    newest, newest_mtime = None, 0.0
+    for name in os.listdir(OUTDIR):
+        if not name.lower().endswith(want):
+            continue
+        p = os.path.join(OUTDIR, name)
+        try:
+            m = os.path.getmtime(p)
+        except OSError:
+            continue
+        if m >= started - 2 and m > newest_mtime:
+            newest, newest_mtime = p, m
+
+    if newest:
+        return newest
+    raise OutputError(f"no {want[1:].upper()} file appeared in Downloads")
+
+
+def _verify_output(path: str, mode: str) -> None:
+    """Open the produced bytes and assert they are a real, playable file. Raises OutputError."""
+    name = os.path.basename(path)
+    ext = EXT_FOR_MODE[mode]
+
+    size = os.path.getsize(path)
+    if size < MIN_BYTES:
+        raise OutputError(f"{name} is only {size} bytes — the download never completed")
+
+    with open(path, "rb") as f:
+        head = f.read(12)
+    check = _MAGIC.get(ext)
+    if check and not check(head):
+        raise OutputError(f"{name} is not a valid {ext[1:].upper()} — the merge/convert failed")
+
+    # ffprobe ships beside ffmpeg; when present, prove the stream actually decodes.
+    probe = _ffprobe_bin()
+    if not probe:
+        return
+    p = subprocess.run(
+        [probe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+        capture_output=True, text=True, creationflags=_NO_WINDOW,
+    )
+    if p.returncode != 0:
+        raise OutputError(f"{name} will not open — the file is corrupt")
+    try:
+        dur = float((p.stdout or "").strip())
+    except ValueError:
+        dur = 0.0
+    if dur <= 0:
+        raise OutputError(f"{name} has zero duration — the rip is empty")
+
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 C_BG      = "#090909"
@@ -104,7 +214,7 @@ class App(tk.Tk):
 
         meta = tk.Frame(hdr, bg=C_BG)
         meta.pack(side="left", padx=(12, 0), pady=(8, 0))
-        tk.Label(meta, text="youtube · instagram · tiktok · twitter · vimeo · +1000 more",
+        tk.Label(meta, text=f"v{VERSION}  ·  youtube · instagram · tiktok · twitter · vimeo · +1000 more",
                  font=f_tiny, bg=C_BG, fg=C_MID).pack(anchor="w")
         tk.Label(meta, text=f"→ {OUTDIR}",
                  font=f_tiny, bg=C_BG, fg=C_DIM).pack(anchor="w")
@@ -329,6 +439,7 @@ class App(tk.Tk):
             cmd = base + ["-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                           "--merge-output-format", "mp4", target]
         try:
+            started = time.time()
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -336,22 +447,36 @@ class App(tk.Tk):
                 text=True,
                 creationflags=_NO_WINDOW,
             )
+            dests: list[str] = []
             for line in proc.stdout:
                 line = line.rstrip()
                 if line:
                     self.after(0, self._append_log, line)
+                    dest = _extract_dest(line)
+                    if dest:
+                        dests.append(dest)
             proc.wait()
 
-            if proc.returncode == 0:
-                self.after(0, self._done_ok)
-            else:
+            if proc.returncode != 0:
                 self.after(0, self._done_err, "yt-dlp exited with error")
+                return
+
+            # Exit code 0 is not the deliverable — the file is. Find what yt-dlp actually
+            # wrote and open it before claiming success.
+            try:
+                out_path = _resolve_output(dests, mode, started)
+                _verify_output(out_path, mode)
+            except (OutputError, OSError) as exc:
+                self.after(0, self._done_err, f"download incomplete — {exc}")
+                return
+
+            self.after(0, self._done_ok, os.path.basename(out_path))
         except Exception as exc:
             self.after(0, self._done_err, str(exc))
 
-    def _done_ok(self):
+    def _done_ok(self, name: str = ""):
         self._stop_spin()
-        self._append_log("✓  saved to Downloads", "ok")
+        self._append_log(f"✓  verified · {name}" if name else "✓  saved to Downloads", "ok")
         self._set_status("✓  saved to Downloads", C_SUCCESS)
         self._reset_btn()
         self.url_entry.delete(0, "end")
