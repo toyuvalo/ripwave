@@ -17,6 +17,13 @@ if %errorlevel% neq 0 (
 )
 
 :: Build exe
+:: Remove the previous binary FIRST. PyInstaller writes to the fixed path
+:: dist\RipWave.exe, so on a failed build the old exe survives -- and the
+:: "if not exist" check below would pass on it, then the packaging step would
+:: zip a stale binary into the release. Delete-then-recreate makes the
+:: existence check a genuine freshness check.
+if exist dist\RipWave.exe del /q dist\RipWave.exe
+
 echo Building ripwave.exe...
 pyinstaller --onefile --windowed ^
     --name RipWave ^
@@ -25,8 +32,13 @@ pyinstaller --onefile --windowed ^
     --add-data "assets\icon.ico;assets" ^
     ripwave.py
 
+if errorlevel 1 (
+    echo Build failed - PyInstaller returned %errorlevel%.
+    pause & exit /b 1
+)
+
 if not exist dist\RipWave.exe (
-    echo Build failed.
+    echo Build failed - PyInstaller exited 0 but produced no dist\RipWave.exe.
     pause & exit /b 1
 )
 

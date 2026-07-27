@@ -41,7 +41,7 @@ OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
 # Suppress console windows on Windows; harmless 0 on macOS/Linux
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 # ── Output verification ───────────────────────────────────────────────────────
 # yt-dlp exiting 0 is NOT proof a playable file landed in Downloads: a failed merge,
