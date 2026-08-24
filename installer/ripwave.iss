@@ -57,6 +57,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "..\dist\RipWave.exe";  DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\yt-dlp.exe";   DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\ffmpeg.exe";   DestDir: "{app}"; Flags: ignoreversion
+; ffprobe backs the "does this .mp4 really contain video?" check in video mode.
+Source: "..\dist\ffprobe.exe";  DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\icon.ico";   DestDir: "{app}\assets"; Flags: ignoreversion
 
 [Icons]

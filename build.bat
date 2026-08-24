@@ -43,9 +43,16 @@ if not exist dist\RipWave.exe (
 )
 
 :: Copy runtime dependencies into dist\
-echo Copying yt-dlp and ffmpeg...
+:: ffprobe is not optional. It is how RipWave proves an .mp4 actually contains a
+:: video stream before reporting success; without it, video mode has to refuse.
+echo Copying yt-dlp, ffmpeg and ffprobe...
 if exist yt-dlp.exe  copy /y yt-dlp.exe  dist\ >nul
 if exist ffmpeg.exe  copy /y ffmpeg.exe  dist\ >nul
+if exist ffprobe.exe copy /y ffprobe.exe dist\ >nul
+
+if not exist dist\ffprobe.exe (
+    echo WARNING: ffprobe.exe is missing - video verification will be unavailable.
+)
 
 :: Package into a zip for release
 echo Packaging release zip...

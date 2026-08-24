@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import font as tkfont
+import json
 import re
 import shutil
 import subprocess
@@ -41,7 +42,7 @@ OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
 # Suppress console windows on Windows; harmless 0 on macOS/Linux
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-VERSION = "1.0.3"
+VERSION = "1.0.5"
 
 # ── Output verification ───────────────────────────────────────────────────────
 # yt-dlp exiting 0 is NOT proof a playable file landed in Downloads: a failed merge,
@@ -60,7 +61,12 @@ _MAGIC = {
     ".mp4": lambda h: h[4:8] == b"ftyp",
 }
 
-# The lines yt-dlp prints naming the file it wrote (we already stream these to the log).
+# yt-dlp tells us the final path directly via --print after_move:filepath. We prefix it
+# with a sentinel so it is unambiguous in the merged stdout/stderr stream, and strip it
+# from the log (it is plumbing, not something the user needs to read).
+DEST_SENTINEL = "RIPWAVE_OUT::"
+
+# Fallback for older yt-dlp builds: the lines it prints naming the file it wrote.
 _DEST_PATTERNS = (
     re.compile(r"^\[[\w:]+\]\s+Destination:\s*(.+)$"),
     re.compile(r'^\[Merger\]\s+Merging formats into\s+"(.+)"\s*$'),
@@ -73,7 +79,54 @@ class OutputError(Exception):
     """yt-dlp claimed success but the artifact on disk is missing or unplayable."""
 
 
+# Turning yt-dlp's failure text into something that tells the user what is actually
+# wrong and whether it is fixable. A raw extractor traceback reads like RipWave broke;
+# most of these are the site refusing, not RipWave failing.
+# Order matters — first match wins, so put the specific causes above the generic ones.
+_DIAGNOSES = (
+    (("only works when logged-in", "account credentials", "sign in to confirm",
+      "login required", "requires authentication", "empty media response",
+      "this video is private", "private video"),
+     "this link needs a logged-in account — RipWave can't sign in for you"),
+    (("unsupported url",),
+     "RipWave doesn't support this site"),
+    (("video unavailable", "has been removed", "no longer available",
+      "content isn't available", "removed by the uploader"),
+     "this video is unavailable — removed, private, or region-locked"),
+    (("no video could be found",),
+     "there's no video at this link"),
+    (("http error 403", "forbidden"),
+     "the site refused the download — it may be blocking downloads or rate-limiting you"),
+    (("unable to extract", "unable to download webpage", "failed to parse json"),
+     "the site changed and yt-dlp can't read it right now — try again later"),
+    (("is not a valid url", "unable to download api page"),
+     "that doesn't look like a link RipWave can open"),
+)
+
+
+def _diagnose(lines: list[str], mode: str) -> str:
+    """Explain a yt-dlp failure in plain language, or fall back to its own last error."""
+    errs = [l for l in lines if "ERROR" in l or "error" in l.lower()]
+    blob = " ".join(errs).lower()
+
+    if "requested format is not available" in blob and mode == "video":
+        return "this link has no downloadable video — audio only (try the WAV or MP3 mode)"
+
+    for needles, message in _DIAGNOSES:
+        if any(n in blob for n in needles):
+            return message
+
+    if errs:
+        # Strip yt-dlp's "ERROR: [extractor] id:" prefix so the cause leads.
+        last = re.sub(r"^ERROR:\s*(\[[^\]]+\]\s*)?([^:]{1,40}:\s*)?", "", errs[-1].strip())
+        return last[:150] if last else "yt-dlp exited with error"
+    return "yt-dlp exited with error"
+
+
 def _extract_dest(line: str) -> str | None:
+    line = line.strip()
+    if line.startswith(DEST_SENTINEL):
+        return line[len(DEST_SENTINEL):].strip().strip('"')
     for pat in _DEST_PATTERNS:
         m = pat.match(line.strip())
         if m:
@@ -135,19 +188,41 @@ def _verify_output(path: str, mode: str) -> None:
     # ffprobe ships beside ffmpeg; when present, prove the stream actually decodes.
     probe = _ffprobe_bin()
     if not probe:
+        # Without ffprobe we cannot prove a "video" really has picture in it. Say so
+        # rather than quietly downgrading the guarantee behind a ✓.
+        if mode == "video":
+            raise OutputError(
+                f"cannot verify {name} contains video — ffprobe.exe is missing from the "
+                "RipWave folder; reinstall RipWave"
+            )
         return
+
     p = subprocess.run(
-        [probe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+        [probe, "-v", "error", "-show_entries", "format=duration",
+         "-show_entries", "stream=codec_type", "-of", "json", path],
         capture_output=True, text=True, creationflags=_NO_WINDOW,
     )
     if p.returncode != 0:
         raise OutputError(f"{name} will not open — the file is corrupt")
+
     try:
-        dur = float((p.stdout or "").strip())
+        info = json.loads(p.stdout or "{}")
     except ValueError:
+        raise OutputError(f"{name} will not open — the file is corrupt")
+
+    try:
+        dur = float(info.get("format", {}).get("duration") or 0)
+    except (TypeError, ValueError):
         dur = 0.0
     if dur <= 0:
         raise OutputError(f"{name} has zero duration — the rip is empty")
+
+    # The complaint this guards against: a format fallback (or a stray global yt-dlp
+    # config carrying -x) hands back an audio-only file with a video extension. An
+    # .mp4 that decodes but has no picture is NOT the video the user asked for.
+    kinds = {s.get("codec_type") for s in info.get("streams", [])}
+    if mode == "video" and "video" not in kinds:
+        raise OutputError(f"{name} has no video stream — only audio was available")
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -361,14 +436,25 @@ class App(tk.Tk):
                 creationflags=_NO_WINDOW,
             )
             out = (proc.stdout + proc.stderr).strip()
+            low = out.lower()
             last_line = [l for l in out.splitlines() if l.strip()][-1] if out else ""
 
-            if any(w in out.lower() for w in ("up to date", "up-to-date", "latest")):
-                self.after(0, self._set_status, "yt-dlp  up to date ✓", C_SUCCESS)
-            elif any(w in out.lower() for w in ("updated", "downloading", "restarting")):
-                self.after(0, self._set_status, "yt-dlp  updated ✓", C_ERROR)
+            # Substring matching on the whole blob used to test for "latest" — which
+            # matches yt-dlp's own "Latest version: stable@..." line. So a yt-dlp that
+            # was months out of date, or that refused to update at all (a pip install
+            # exits 100 with "Use that to update"), still displayed "up to date ✓".
+            # Extractors rot fast; a stale yt-dlp is the usual reason a video 403s.
+            # Trust the exit code first, then match on specific phrases.
+            if proc.returncode != 0:
+                self.after(0, self._set_status, "yt-dlp  UPDATE FAILED — rips may fail", C_ERROR)
+                if last_line:
+                    self.after(0, self._append_log, last_line, "err")
+            elif "updated yt-dlp to" in low or "restarting" in low:
+                self.after(0, self._set_status, "yt-dlp  updated ✓", C_SUCCESS)
                 if last_line:
                     self.after(0, self._append_log, last_line, "ok")
+            elif "is up to date" in low or "up-to-date" in low:
+                self.after(0, self._set_status, "yt-dlp  up to date ✓", C_SUCCESS)
             else:
                 self.after(0, self._set_status, "ready", C_MID)
         except Exception:
@@ -428,15 +514,38 @@ class App(tk.Tk):
     def _run(self, target, mode):
         # On Windows ffmpeg.exe is bundled in SCRIPT_DIR; on macOS/Linux it's on PATH
         ffmpeg_args = ["--ffmpeg-location", SCRIPT_DIR] if sys.platform == "win32" else []
-        base = [YTDLP, "--restrict-filenames"] + ffmpeg_args + \
-               ["-o", os.path.join(OUTDIR, "%(title)s.%(ext)s")]
+        base = [YTDLP,
+                # --ignore-config is load-bearing, not hygiene. yt-dlp merges any config
+                # it finds (%APPDATA%\yt-dlp\config, ~/yt-dlp.conf, the cwd, ...) into
+                # every invocation. A global config containing "-x --audio-format mp3"
+                # — a normal thing for someone who also uses yt-dlp from a terminal —
+                # silently appends an audio-extraction post-processor to our VIDEO
+                # command: yt-dlp downloads the video, merges the .mp4, transcodes it to
+                # .mp3, deletes the .mp4, and exits 0. That is precisely the "I asked for
+                # video and got an mp3" bug. RipWave builds a complete command; nothing
+                # outside this function is allowed to edit it.
+                "--ignore-config",
+                "--restrict-filenames"] + ffmpeg_args + [
+                # Have yt-dlp state the final path outright instead of us reverse-
+                # engineering it from log lines. --print implies --simulate, so
+                # --no-simulate is required to still actually download.
+                "--print", f"after_move:{DEST_SENTINEL}%(filepath)s",
+                "--no-simulate", "--no-quiet",
+                "-o", os.path.join(OUTDIR, "%(title)s.%(ext)s")]
         if mode == "audio":
             cmd = base + ["-f", "bestaudio", "--extract-audio", "--audio-format", "wav", target]
         elif mode == "mp3":
             cmd = base + ["-f", "bestaudio", "--extract-audio", "--audio-format", "mp3",
                           "--audio-quality", "0", target]
         else:
-            cmd = base + ["-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            # Every branch requires a real video track. The old selector ended in a bare
+            # "/best", which on an audio-only URL happily returns audio — so RipWave
+            # would "succeed" at downloading a video that was never a video. Requiring
+            # vcodec!=none makes yt-dlp fail loudly instead, which is the honest answer.
+            cmd = base + ["-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]"
+                                "/bestvideo+bestaudio"
+                                "/best[ext=mp4][vcodec!=none]"
+                                "/best[vcodec!=none]",
                           "--merge-output-format", "mp4", target]
         try:
             started = time.time()
@@ -448,17 +557,24 @@ class App(tk.Tk):
                 creationflags=_NO_WINDOW,
             )
             dests: list[str] = []
+            captured: list[str] = []
             for line in proc.stdout:
                 line = line.rstrip()
-                if line:
+                if not line:
+                    continue
+                dest = _extract_dest(line)
+                if dest:
+                    dests.append(dest)
+                captured.append(line)
+                # The sentinel line is plumbing for us, not output for the user.
+                if not line.strip().startswith(DEST_SENTINEL):
                     self.after(0, self._append_log, line)
-                    dest = _extract_dest(line)
-                    if dest:
-                        dests.append(dest)
             proc.wait()
 
             if proc.returncode != 0:
-                self.after(0, self._done_err, "yt-dlp exited with error")
+                # Say what actually went wrong and whether the user can do anything
+                # about it, instead of a generic failure that reads like RipWave broke.
+                self.after(0, self._done_err, _diagnose(captured, mode))
                 return
 
             # Exit code 0 is not the deliverable — the file is. Find what yt-dlp actually
