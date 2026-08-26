@@ -18,6 +18,7 @@ RipWave verifies what it produced before it tells you it worked: it opens the fi
 - **Verified output** — every rip is opened and checked before RipWave reports success; an MP4 must contain a real video stream
 - **Honest failures** — plain-language reasons ("this link needs a logged-in account"), never a silent substitution
 - **Auto-updates yt-dlp** on every launch — no stale downloads
+- **Tells you when RipWave itself is out of date** — a banner appears in the header when a newer release exists; click it to download. The [one-click link](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-Setup.exe) always serves the newest installer
 - **Files land in Downloads** — folder opens automatically when done
 - **No console window** — clean, distraction-free experience
 - **Windows · macOS · Linux** — one app, all platforms

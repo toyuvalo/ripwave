@@ -26,3 +26,6 @@ Desktop.ini
 .idea/
 *.suo
 *.user
+
+# Inno Setup output (published as a release asset, never committed)
+installer/*.exe

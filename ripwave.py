@@ -8,6 +8,7 @@ import threading
 import time
 import os
 import sys
+import webbrowser
 
 # ── Paths (works both as .py and PyInstaller .exe) ────────────────────────────
 if getattr(sys, "frozen", False):
@@ -42,7 +43,38 @@ OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
 # Suppress console windows on Windows; harmless 0 on macOS/Linux
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
+
+# ── Self-update check ─────────────────────────────────────────────────────────
+# RipWave keeps yt-dlp current but had no way to tell you RipWave itself was stale.
+# That mattered: the v1.0.1 build shipped a video mode that silently returned mp3s,
+# and anyone running it had no signal that a fix existed. These URLs are stable —
+# /releases/latest/download/<asset> always redirects to the newest release's asset,
+# so the download link never has to be updated for a new version.
+REPO          = "toyuvalo/ripwave"
+RELEASES_API  = f"https://api.github.com/repos/{REPO}/releases/latest"
+INSTALLER_URL = f"https://github.com/{REPO}/releases/latest/download/RipWave-Setup.exe"
+RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
+
+
+def _parse_version(text: str) -> tuple:
+    """'v1.0.10' -> (1, 0, 10). Unparseable pieces sort as 0 rather than raising."""
+    nums = re.findall(r"\d+", (text or "").strip())
+    return tuple(int(n) for n in nums[:4]) or (0,)
+
+
+def _latest_release() -> str | None:
+    """Newest published version tag, or None if offline / rate-limited / malformed."""
+    import urllib.request
+    req = urllib.request.Request(
+        RELEASES_API,
+        headers={"Accept": "application/vnd.github+json",
+                 "User-Agent": f"RipWave/{VERSION}"},
+    )
+    with urllib.request.urlopen(req, timeout=6) as resp:
+        data = json.load(resp)
+    tag = (data.get("tag_name") or "").strip()
+    return tag or None
 
 # ── Output verification ───────────────────────────────────────────────────────
 # yt-dlp exiting 0 is NOT proof a playable file landed in Downloads: a failed merge,
@@ -267,6 +299,9 @@ class App(tk.Tk):
 
         self.url_entry.focus_set()
         threading.Thread(target=self._startup_update, daemon=True).start()
+        # Separate thread: a slow or unreachable GitHub must never delay the yt-dlp
+        # update check, and neither may delay the user typing a link.
+        threading.Thread(target=self._check_app_update, daemon=True).start()
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -297,6 +332,10 @@ class App(tk.Tk):
                  font=f_tiny, bg=C_BG, fg=C_MID).pack(anchor="w")
         tk.Label(meta, text=f"→ {OUTDIR}",
                  font=f_tiny, bg=C_BG, fg=C_DIM).pack(anchor="w")
+
+        # Stays hidden (never packed) unless a newer release is actually found, so the
+        # header keeps its size for the overwhelmingly common up-to-date case.
+        self.update_lbl = tk.Label(meta, text="", font=f_tiny, bg=C_BG, fg=C_YELLOW)
 
         tk.Frame(self, bg=C_BORDER, height=1).pack(fill="x", padx=28, pady=(18, 0))
         tk.Frame(self, bg=C_BG, height=16).pack()
@@ -430,6 +469,29 @@ class App(tk.Tk):
         self.log.tag_config("dim", foreground=C_DIM)
 
     # ── Startup update ────────────────────────────────────────────────────────
+
+    def _check_app_update(self):
+        """Tell the user when a newer RipWave exists. Never blocks, never nags on failure."""
+        try:
+            tag = _latest_release()
+        except Exception:
+            return  # offline or GitHub unreachable — silence is correct here
+        if not tag:
+            return
+        if _parse_version(tag) <= _parse_version(VERSION):
+            return
+        self.after(0, self._show_update_banner, tag)
+
+    def _show_update_banner(self, tag: str):
+        self.update_lbl.config(
+            text=f"▲  RipWave {tag} is available  —  click to download",
+            fg=C_YELLOW, cursor="hand2",
+        )
+        self.update_lbl.pack(anchor="w")
+        # Bound here rather than at build time so a stale banner can never be clickable.
+        self.update_lbl.bind("<Button-1>", lambda _e: webbrowser.open(INSTALLER_URL))
+        self._append_log(f"▲  update available: RipWave {tag} (you have v{VERSION})", "ok")
+        self._append_log(f"   {RELEASES_PAGE}", "dim")
 
     def _startup_update(self):
         self.after(0, self._set_status, "checking for updates...", C_YELLOW)
