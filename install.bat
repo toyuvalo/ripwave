@@ -48,28 +48,46 @@ if exist yt-dlp.exe (
 )
 echo  yt-dlp OK
 
-:: ── 3. Download ffmpeg.exe ───────────────────────────────────────────────────
-echo [3/3] Getting ffmpeg...
-if exist ffmpeg.exe (
-    echo  ffmpeg already present, skipping.
-) else (
-    echo  Downloading ffmpeg (this may take a moment)...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$tmp = '$env:TEMP\rw_ffmpeg.zip';" ^
-        "Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile $tmp;" ^
-        "Add-Type -AssemblyName System.IO.Compression.FileSystem;" ^
-        "$zip = [IO.Compression.ZipFile]::OpenRead($tmp);" ^
-        "$entry = $zip.Entries | Where-Object { $_.Name -eq 'ffmpeg.exe' } | Select-Object -First 1;" ^
-        "[IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path (Get-Location) 'ffmpeg.exe'), $true);" ^
-        "$zip.Dispose();" ^
-        "Remove-Item $tmp -Force" ^
-        2>nul
-    if not exist ffmpeg.exe (
-        echo  Failed to download ffmpeg. Check your internet connection.
-        pause & exit /b 1
-    )
+:: ── 3. Download ffmpeg.exe + ffprobe.exe ─────────────────────────────────────
+:: ffprobe is NOT optional. RipWave uses it to prove an .mp4 actually contains a
+:: video stream before reporting success; without it, MP4 mode refuses to run.
+:: Both come out of the same archive, so pull them in one pass.
+echo [3/3] Getting ffmpeg and ffprobe...
+if exist ffmpeg.exe if exist ffprobe.exe (
+    echo  ffmpeg and ffprobe already present, skipping.
+    goto :ffmpeg_done
 )
-echo  ffmpeg OK
+echo  Downloading ffmpeg + ffprobe (this may take a moment)...
+:: NOTE: everything below is joined into ONE PowerShell line by the ^ continuations,
+:: so no # comments in there (a # would comment out the rest of the command), and
+:: no ^| pipes (the escape does not survive the continuation). Use foreach/if instead.
+:: NOTE: $env:TEMP must not sit inside single quotes - PowerShell does not expand
+:: those, so the old '$env:TEMP\rw_ffmpeg.zip' stayed literal and every install
+:: failed with "A drive with the name '$env' does not exist". Join-Path avoids it.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$tmp = Join-Path $env:TEMP 'rw_ffmpeg.zip';" ^
+    "Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile $tmp;" ^
+    "Add-Type -AssemblyName System.IO.Compression.FileSystem;" ^
+    "$zip = [IO.Compression.ZipFile]::OpenRead($tmp);" ^
+    "foreach ($e in $zip.Entries) {" ^
+    "  if ($e.Name -eq 'ffmpeg.exe' -or $e.Name -eq 'ffprobe.exe') {" ^
+    "    [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path (Get-Location) $e.Name), $true)" ^
+    "  }" ^
+    "};" ^
+    "$zip.Dispose();" ^
+    "Remove-Item $tmp -Force" ^
+    2>nul
+if not exist ffmpeg.exe (
+    echo  Failed to download ffmpeg. Check your internet connection.
+    pause & exit /b 1
+)
+if not exist ffprobe.exe (
+    echo  Failed to download ffprobe. Check your internet connection.
+    echo  Without it RipWave cannot verify video downloads and MP4 mode will refuse to run.
+    pause & exit /b 1
+)
+:ffmpeg_done
+echo  ffmpeg + ffprobe OK
 
 :: ── Create desktop shortcut ──────────────────────────────────────────────────
 echo.

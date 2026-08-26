@@ -2,7 +2,9 @@
 
 **Paste a link. Get a file. Done.**
 
-RipWave is a minimal desktop tool for ripping audio (WAV) or downloading video (MP4) from YouTube, Instagram, TikTok, Twitter/X, Vimeo, SoundCloud, and [1000+ other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) — with a clean, fast UI that gets out of your way.
+RipWave is a minimal desktop tool for ripping audio (WAV/MP3) or downloading video (MP4) from YouTube, TikTok, Twitter/X, SoundCloud, and [1000+ other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) — with a clean, fast UI that gets out of your way.
+
+RipWave verifies what it produced before it tells you it worked: it opens the file, checks the container, and (in MP4 mode) confirms an actual video stream is present. If it can't deliver what you asked for, it says so instead of handing you something else.
 
 **[Project page →](https://webdev.dvlce.ca/webdev/ripwave)** · **[⬇ One-click Windows install](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-Setup.exe)**
 
@@ -10,9 +12,11 @@ RipWave is a minimal desktop tool for ripping audio (WAV) or downloading video (
 
 ## Features
 
-- **Audio or video** — toggle between WAV and MP4 with one click
+- **Audio or video** — toggle between WAV, MP3 and MP4 with one click
 - **YouTube name search** — no URL? Just type the name and hit Enter
-- **1000+ supported sites** — YouTube, Instagram, TikTok, Twitter/X, Vimeo, SoundCloud, and more
+- **1000+ supported sites** — YouTube, TikTok, Twitter/X, SoundCloud, and more
+- **Verified output** — every rip is opened and checked before RipWave reports success; an MP4 must contain a real video stream
+- **Honest failures** — plain-language reasons ("this link needs a logged-in account"), never a silent substitution
 - **Auto-updates yt-dlp** on every launch — no stale downloads
 - **Files land in Downloads** — folder opens automatically when done
 - **No console window** — clean, distraction-free experience
@@ -68,7 +72,7 @@ python3 ripwave.py
 
 1. Open RipWave from your desktop shortcut
 2. **Paste a URL** from any supported site — or **type a YouTube video name**
-3. Choose **AUDIO WAV** or **VIDEO MP4**
+3. Choose **WAV**, **MP3**, or **MP4**
 4. Hit **Enter** or click **DOWNLOAD ↓**
 5. File appears in your Downloads folder
 
@@ -76,7 +80,48 @@ python3 ripwave.py
 
 ## Supported Sites
 
-YouTube · Instagram · TikTok · Twitter/X · Vimeo · SoundCloud · Twitch · Reddit · Facebook · Dailymotion · Bandcamp · [and 1000+ more →](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
+YouTube · TikTok · Twitter/X · SoundCloud · Twitch · Reddit · Dailymotion · Bandcamp · [and 1000+ more →](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
+
+Verified working in all three modes (WAV · MP3 · MP4) as of 2026-08-24: YouTube, YouTube Shorts, TikTok, Twitter/X. SoundCloud works for audio (it has no video to give).
+
+### Sites that need a login
+
+**Instagram and Vimeo are not listed above, on purpose.** Both now require a logged-in account for essentially all content — Vimeo rejects every video without credentials, and Instagram returns an empty media response. RipWave used to advertise them; it doesn't any more, because it can't sign in for you. When you paste such a link you'll get:
+
+```
+✗  this link needs a logged-in account — RipWave can't sign in for you
+```
+
+**You can still download from them** — yt-dlp supports it, RipWave just doesn't ship it as a one-click feature. Use yt-dlp directly with your browser's cookies:
+
+```bash
+# from the RipWave install folder (Windows), or a system yt-dlp elsewhere
+yt-dlp --cookies-from-browser firefox <url>
+```
+
+Two caveats worth knowing before you file a bug:
+
+- **You must actually be logged into that site in that browser.** Extracting cookies from a browser where you've never signed in gets you nothing.
+- **Chrome and Edge lock their cookie database while running.** You'll get `Could not copy Chrome cookie database` unless the browser is fully closed ([yt-dlp#7271](https://github.com/yt-dlp/yt-dlp/issues/7271)). Firefox has no such problem.
+
+Sites gate content on their own schedule, so treat the working/not-working lists above as a snapshot rather than a guarantee.
+
+---
+
+## A note on global yt-dlp config
+
+RipWave runs yt-dlp with `--ignore-config`, deliberately.
+
+yt-dlp merges any config file it finds (`%APPDATA%\yt-dlp\config`, `~/yt-dlp.conf`, the current directory, …) into **every** invocation. If you also use yt-dlp from a terminal and keep something like this in your config:
+
+```
+-x
+--audio-format mp3
+```
+
+…those flags get appended to RipWave's *video* command too. yt-dlp then downloads the video, merges the MP4, transcodes it to MP3, deletes the MP4, and exits 0 — a silent, total defeat of MP4 mode. This is a real bug that shipped in RipWave ≤ v1.0.4; `--ignore-config` is the fix.
+
+The upshot: **your global yt-dlp config does not affect RipWave.** If you want different download behaviour, that's a RipWave change, not a config-file change.
 
 ---
 
@@ -108,7 +153,10 @@ Outputs a standalone `dist/RipWave.exe` — no Python required to run it.
 |------|---------|---------------|
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Download engine | ✓ (Windows); via brew/pip on mac/linux |
 | [ffmpeg](https://ffmpeg.org) | Audio/video conversion | ✓ (Windows); via brew/pkg manager on mac/linux |
+| [ffprobe](https://ffmpeg.org) | Output verification — proves an MP4 really contains video | ✓ (ships beside ffmpeg) |
 | Python 3.8+ | Runtime | prompted |
+
+Without `ffprobe`, MP4 mode refuses to run rather than reporting a success it can't stand behind. It ships with the Windows installer and portable zip, and comes with `ffmpeg` on macOS/Linux.
 
 ---
 

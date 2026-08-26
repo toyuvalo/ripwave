@@ -42,7 +42,7 @@ OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
 # Suppress console windows on Windows; harmless 0 on macOS/Linux
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 
 # ── Output verification ───────────────────────────────────────────────────────
 # yt-dlp exiting 0 is NOT proof a playable file landed in Downloads: a failed merge,
@@ -289,7 +289,11 @@ class App(tk.Tk):
 
         meta = tk.Frame(hdr, bg=C_BG)
         meta.pack(side="left", padx=(12, 0), pady=(8, 0))
-        tk.Label(meta, text=f"v{VERSION}  ·  youtube · instagram · tiktok · twitter · vimeo · +1000 more",
+        # Only list sites that work without credentials. Instagram and Vimeo were here
+        # until 2026-08-24; both now require a logged-in account for essentially all
+        # content, so advertising them promised something RipWave cannot deliver.
+        # See "Sites that need a login" in the README.
+        tk.Label(meta, text=f"v{VERSION}  ·  youtube · tiktok · twitter · soundcloud · +1000 more",
                  font=f_tiny, bg=C_BG, fg=C_MID).pack(anchor="w")
         tk.Label(meta, text=f"→ {OUTDIR}",
                  font=f_tiny, bg=C_BG, fg=C_DIM).pack(anchor="w")

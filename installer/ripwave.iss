@@ -13,7 +13,9 @@
 #define MyAppPublisher "RipWave"
 #define MyAppURL       "https://github.com/toyuvalo/ripwave"
 #define MyAppExeName   "RipWave.exe"
-#define MyAppComment   "Download YouTube, Instagram, TikTok, SoundCloud — audio/video ripper (yt-dlp)"
+; Instagram dropped 2026-08-24 — it now requires a logged-in account, so listing it
+; advertised something RipWave cannot deliver. See "Sites that need a login" in README.
+#define MyAppComment   "Download YouTube, TikTok, Twitter/X, SoundCloud — audio/video ripper (yt-dlp)"
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
