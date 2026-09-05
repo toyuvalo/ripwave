@@ -88,10 +88,12 @@ jobs:
           }
           $zip.Dispose()
 
+      # RipWave.exe is a GUI-subsystem binary: PowerShell's `&` returns at once and
+      # leaves $LASTEXITCODE empty, so wait on the process explicitly.
       - name: Self-test the frozen build
         run: |
-          & dist/RipWave.exe --selftest
-          if ($LASTEXITCODE -ne 0) { throw "RipWave.exe --selftest failed ($LASTEXITCODE)" }
+          $p = Start-Process -FilePath (Resolve-Path dist/RipWave.exe) -ArgumentList "--selftest" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "RipWave.exe --selftest failed (exit $($p.ExitCode))" }
 
       - name: Build one-click installer (Inno Setup)
         run: |
