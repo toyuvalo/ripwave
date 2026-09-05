@@ -29,3 +29,6 @@ Desktop.ini
 
 # Inno Setup output (published as a release asset, never committed)
 installer/*.exe
+
+# macOS build inputs (downloaded by build-mac.sh, never committed)
+tools/

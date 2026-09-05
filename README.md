@@ -6,7 +6,7 @@ RipWave is a minimal desktop tool for ripping audio (WAV/MP3) or downloading vid
 
 RipWave verifies what it produced before it tells you it worked: it opens the file, checks the container, and (in MP4 mode) confirms an actual video stream is present. If it can't deliver what you asked for, it says so instead of handing you something else.
 
-**[Project page →](https://webdev.dvlce.ca/webdev/ripwave)** · **[⬇ One-click Windows install](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-Setup.exe)**
+**[Project page →](https://webdev.dvlce.ca/webdev/ripwave)** · **[⬇ Windows](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-Setup.exe)** · **[⬇ Mac (Apple Silicon)](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-macOS-arm64.dmg)** · **[⬇ Mac (Intel)](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-macOS-x86_64.dmg)**
 
 ---
 
@@ -18,10 +18,10 @@ RipWave verifies what it produced before it tells you it worked: it opens the fi
 - **Verified output** — every rip is opened and checked before RipWave reports success; an MP4 must contain a real video stream
 - **Honest failures** — plain-language reasons ("this link needs a logged-in account"), never a silent substitution
 - **Auto-updates yt-dlp** on every launch — no stale downloads
-- **Tells you when RipWave itself is out of date** — a banner appears in the header when a newer release exists; click it to download. The [one-click link](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-Setup.exe) always serves the newest installer
+- **Tells you when RipWave itself is out of date** — a banner appears in the header when a newer release exists; click it to download the installer for your platform. The one-click links always serve the newest release
 - **Files land in Downloads** — folder opens automatically when done
 - **No console window** — clean, distraction-free experience
-- **Windows · macOS · Linux** — one app, all platforms
+- **Windows · macOS · Linux** — one app, all platforms; one-click installers for Windows and Mac bundle everything (no Python, no Homebrew)
 
 ---
 
@@ -35,17 +35,20 @@ Double-click the file. It installs everything (RipWave, `yt-dlp`, `ffmpeg`), cre
 
 <sub>Prefer the scripted install? The [latest release](../../releases/latest) also ships `install.bat` (needs Python 3.8+) and a portable `RipWave-windows.zip`.</sub>
 
-### macOS
+### macOS — one-click
 
-```bash
-git clone https://github.com/toyuvalo/ripwave.git
-cd ripwave
-bash install-mac.sh
-```
+**[⬇ Apple Silicon (M1/M2/M3/M4)](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-macOS-arm64.dmg)** · **[⬇ Intel](https://github.com/toyuvalo/ripwave/releases/latest/download/RipWave-macOS-x86_64.dmg)**
 
-The installer:
-- Installs `yt-dlp` and `ffmpeg` via Homebrew (installs Homebrew if missing)
-- Creates a **`RipWave.command`** double-click launcher on your Desktop
+Open the DMG and drag **RipWave** into **Applications**. The app is fully self-contained — `yt-dlp`, `ffmpeg` and `ffprobe` ship inside it. No Python, no Homebrew, no Terminal.
+
+**First launch only:** RipWave isn't signed with an Apple Developer ID, so macOS shows *"Apple could not verify RipWave is free of malware"*. Click **Done**, then:
+
+- **macOS 15 Sequoia or newer:** System Settings → **Privacy & Security** → scroll down → **Open Anyway** → **Open**.
+- **macOS 14 or older:** right-click (or Control-click) **RipWave** in Applications → **Open** → **Open**.
+
+That's a one-time approval; afterwards it opens like any other app. (Terminal equivalent: `xattr -dr com.apple.quarantine /Applications/RipWave.app`.)
+
+<sub>Prefer the scripted route? `git clone` this repo and run `bash install-mac.sh` — it installs `yt-dlp`/`ffmpeg` via Homebrew and puts a `RipWave.command` launcher on your Desktop (needs Python 3.8+ with Tk).</sub>
 
 ### Linux
 
@@ -131,14 +134,14 @@ The upshot: **your global yt-dlp config does not affect RipWave.** If you want d
 | OS | Command |
 |----|---------|
 | Windows | **Settings → Apps → RipWave → Uninstall** (or delete `%LOCALAPPDATA%\RipWave\` if you used `install.bat`) |
-| macOS | `bash uninstall-mac.sh` |
+| macOS | Drag **RipWave** from Applications to the Trash (or `bash uninstall-mac.sh`, which also removes the script launcher) |
 | Linux | `bash uninstall-linux.sh` |
 
 ---
 
-## Build from source (Windows)
+## Build from source
 
-Requires Python 3.8+ and PyInstaller.
+**Windows** — requires Python 3.8+ and PyInstaller:
 
 ```bash
 build.bat
@@ -146,18 +149,29 @@ build.bat
 
 Outputs a standalone `dist/RipWave.exe` — no Python required to run it.
 
+**macOS** — requires the [python.org](https://www.python.org/downloads/macos/) Python 3.12 (Homebrew's lacks Tk) and Xcode command-line tools:
+
+```bash
+bash build-mac.sh              # this Mac's CPU
+ARCH=x86_64 bash build-mac.sh  # cross-package for Intel
+```
+
+Downloads the universal `yt-dlp_macos` binary plus static `ffmpeg`/`ffprobe` from [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static), bundles them into `dist/RipWave.app`, ad-hoc signs it, runs `RipWave --selftest`, and writes `dist/RipWave-macOS-<arch>.dmg`.
+
+CI (`.github/workflows/release.yml`) builds all three — Windows, Mac arm64, Mac Intel — on every tag and attaches them to the GitHub Release.
+
 ---
 
 ## Dependencies
 
 | Tool | Purpose | Auto-installed |
 |------|---------|---------------|
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Download engine | ✓ (Windows); via brew/pip on mac/linux |
-| [ffmpeg](https://ffmpeg.org) | Audio/video conversion | ✓ (Windows); via brew/pkg manager on mac/linux |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Download engine | ✓ bundled (Windows installer, Mac app); via pip on Linux |
+| [ffmpeg](https://ffmpeg.org) | Audio/video conversion | ✓ bundled (Windows installer, Mac app); via package manager on Linux |
 | [ffprobe](https://ffmpeg.org) | Output verification — proves an MP4 really contains video | ✓ (ships beside ffmpeg) |
-| Python 3.8+ | Runtime | prompted |
+| Python 3.8+ | Runtime | ✓ bundled in the installers; needed only to run from source |
 
-Without `ffprobe`, MP4 mode refuses to run rather than reporting a success it can't stand behind. It ships with the Windows installer and portable zip, and comes with `ffmpeg` on macOS/Linux.
+Without `ffprobe`, MP4 mode refuses to run rather than reporting a success it can't stand behind. It ships with the Windows installer, the portable zip and the Mac app, and comes with `ffmpeg` on Linux.
 
 ---
 

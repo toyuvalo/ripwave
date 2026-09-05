@@ -11,14 +11,46 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: windows-latest
+  # ── Release metadata (tag / version / rolling) ─────────────────────────────
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      rolling: ${{ steps.meta.outputs.rolling }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        shell: bash
+        run: |
+          app_version="$(sed -n 's/^VERSION = "\(.*\)"/\1/p' ripwave.py | tr -d '\r')"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+            version="${tag#v}"
+            rolling="false"
+            if [[ "$version" != "$app_version" ]]; then
+              echo "::error::tag $tag does not match VERSION=$app_version in ripwave.py"
+              exit 1
+            fi
+          else
+            tag="latest"
+            version="$app_version"
+            rolling="true"
+          fi
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "rolling=$rolling"
+          } >> "$GITHUB_OUTPUT"
 
+  # ── Windows: RipWave-Setup.exe + portable zip ──────────────────────────────
+  windows:
+    needs: meta
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -40,7 +72,8 @@ jobs:
             -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" `
             -OutFile "dist/yt-dlp.exe"
 
-      - name: Download ffmpeg
+      # ffprobe.exe is required by the installer (MP4 verification) — extract both.
+      - name: Download ffmpeg + ffprobe
         run: |
           $tmp = "$env:TEMP\ffmpeg.zip"
           Invoke-WebRequest `
@@ -48,28 +81,17 @@ jobs:
             -OutFile $tmp
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [IO.Compression.ZipFile]::OpenRead($tmp)
-          $entry = $zip.Entries | Where-Object { $_.Name -eq "ffmpeg.exe" } | Select-Object -First 1
-          [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "dist/ffmpeg.exe", $true)
+          foreach ($name in @("ffmpeg.exe", "ffprobe.exe")) {
+            $entry = $zip.Entries | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+            if (-not $entry) { throw "$name not found in ffmpeg zip" }
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "dist/$name", $true)
+          }
           $zip.Dispose()
 
-      - name: Resolve release metadata
-        id: meta
-        shell: bash
+      - name: Self-test the frozen build
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            tag="$GITHUB_REF_NAME"
-            version="${tag#v}"
-            rolling="false"
-          else
-            tag="latest"
-            version="1.0.1"
-            rolling="true"
-          fi
-          {
-            echo "tag=$tag"
-            echo "version=$version"
-            echo "rolling=$rolling"
-          } >> "$GITHUB_OUTPUT"
+          & dist/RipWave.exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw "RipWave.exe --selftest failed ($LASTEXITCODE)" }
 
       - name: Build one-click installer (Inno Setup)
         run: |
@@ -78,17 +100,70 @@ jobs:
             choco install innosetup -y --no-progress
             $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           }
-          & "$iscc" "/DMyAppVersion=${{ steps.meta.outputs.version }}" installer\ripwave.iss
+          & "$iscc" "/DMyAppVersion=${{ needs.meta.outputs.version }}" installer\ripwave.iss
           if (-not (Test-Path "installer\RipWave-Setup.exe")) {
             throw "RipWave-Setup.exe was not produced"
           }
 
       - name: Package portable zip
-        run: |
-          Compress-Archive -Path dist/* -DestinationPath dist/RipWave-windows.zip
+        run: Compress-Archive -Path dist/* -DestinationPath RipWave-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          if-no-files-found: error
+          path: |
+            installer/RipWave-Setup.exe
+            RipWave-windows.zip
+
+  # ── macOS: RipWave.app in a DMG, one per CPU ───────────────────────────────
+  macos:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest      # Apple Silicon
+            arch: arm64
+          - runner: macos-15-intel    # Intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build RipWave.app + DMG
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: bash build-mac.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: dist/RipWave-macOS-${{ matrix.arch }}.dmg
+
+  # ── Publish everything that built ──────────────────────────────────────────
+  # Runs even if one platform failed so a broken Intel runner never blocks the
+  # Windows + Apple Silicon assets; the failed job still turns the run red.
+  release:
+    needs: [meta, windows, macos]
+    if: always() && needs.meta.result == 'success' && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -la release
 
       - name: Move rolling 'latest' tag
-        if: steps.meta.outputs.rolling == 'true'
+        if: needs.meta.outputs.rolling == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -118,12 +193,11 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: ${{ steps.meta.outputs.rolling == 'true' && 'RipWave (latest)' || steps.meta.outputs.tag }}
-          make_latest: "true"
-          prerelease: false
-          files: |
-            installer/RipWave-Setup.exe
-            dist/RipWave-windows.zip
-          generate_release_notes: ${{ steps.meta.outputs.rolling == 'false' }}
-          body: ${{ steps.meta.outputs.rolling == 'true' && 'Rolling build from latest master — one-click installer RipWave-Setup.exe' || '' }}
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: ${{ needs.meta.outputs.rolling == 'true' && 'RipWave (rolling master build)' || format('RipWave {0}', needs.meta.outputs.tag) }}
+          # Only tagged releases become "Latest" — that is what /releases/latest/download resolves to.
+          make_latest: ${{ needs.meta.outputs.rolling == 'true' && 'false' || 'true' }}
+          prerelease: ${{ needs.meta.outputs.rolling == 'true' }}
+          files: release/*
+          generate_release_notes: ${{ needs.meta.outputs.rolling == 'false' }}
+          body: ${{ needs.meta.outputs.rolling == 'true' && 'Rolling build from latest master — untested. Use the Latest tagged release unless you know why you want this.' || '' }}

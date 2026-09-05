@@ -1,8 +1,13 @@
 # Normalise line endings to LF in the repo, checkout as CRLF on Windows
 * text=auto eol=crlf
 
+# Shell scripts run on macOS/Linux (and in CI on a mac runner): must be LF
+*.sh text eol=lf
+
 # Treat binaries as binary
 *.exe binary
 *.ico binary
+*.icns binary
 *.png binary
 *.zip binary
+*.dmg binary

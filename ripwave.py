@@ -31,19 +31,31 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# On Windows yt-dlp.exe and ffmpeg.exe are bundled next to the script.
-# On macOS/Linux they are system-installed (brew/apt/pip).
+# Helper binaries: the Windows installer and the macOS .app both ship yt-dlp,
+# ffmpeg and ffprobe right next to the RipWave executable (SCRIPT_DIR — on macOS
+# that is RipWave.app/Contents/MacOS). A Finder-launched app gets a bare PATH, so
+# "look on PATH" is only a fallback for source checkouts and the Linux installer.
+_EXE = ".exe" if sys.platform == "win32" else ""
+
+
+def _bundled(name: str) -> str | None:
+    """Absolute path of a helper shipped beside RipWave, or None if not bundled."""
+    path = os.path.join(SCRIPT_DIR, name + _EXE)
+    return path if os.path.exists(path) else None
+
+
 if sys.platform == "win32":
     YTDLP = os.path.join(SCRIPT_DIR, "yt-dlp.exe")
 else:
-    YTDLP = "yt-dlp"
+    YTDLP = _bundled("yt-dlp") or "yt-dlp"
+BUNDLED_FFMPEG = _bundled("ffmpeg")
 
 OUTDIR = os.path.join(os.path.expanduser("~"), "Downloads")
 
 # Suppress console windows on Windows; harmless 0 on macOS/Linux
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 # ── Self-update check ─────────────────────────────────────────────────────────
 # RipWave keeps yt-dlp current but had no way to tell you RipWave itself was stale.
@@ -53,7 +65,16 @@ VERSION = "1.0.7"
 # so the download link never has to be updated for a new version.
 REPO          = "toyuvalo/ripwave"
 RELEASES_API  = f"https://api.github.com/repos/{REPO}/releases/latest"
-INSTALLER_URL = f"https://github.com/{REPO}/releases/latest/download/RipWave-Setup.exe"
+# Each platform's one-click asset. On macOS pick the DMG for this CPU so an Apple
+# Silicon user is never handed the Intel build (it would still run, under Rosetta,
+# but slower and with a "install Rosetta?" prompt on a clean machine).
+if sys.platform == "darwin":
+    import platform as _platform
+    _ARCH = "arm64" if _platform.machine() == "arm64" else "x86_64"
+    INSTALLER_ASSET = f"RipWave-macOS-{_ARCH}.dmg"
+else:
+    INSTALLER_ASSET = "RipWave-Setup.exe"
+INSTALLER_URL = f"https://github.com/{REPO}/releases/latest/download/{INSTALLER_ASSET}"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 
 
@@ -167,12 +188,31 @@ def _extract_dest(line: str) -> str | None:
 
 
 def _ffprobe_bin() -> str | None:
-    """ffprobe.exe ships next to the bundled ffmpeg.exe on Windows; else look on PATH."""
-    if sys.platform == "win32":
-        local = os.path.join(SCRIPT_DIR, "ffprobe.exe")
-        if os.path.exists(local):
-            return local
-    return shutil.which("ffprobe")
+    """ffprobe ships next to the bundled ffmpeg (Windows installer, macOS .app); else PATH."""
+    return _bundled("ffprobe") or shutil.which("ffprobe")
+
+
+def _strip_quarantine() -> None:
+    """macOS: drop the quarantine flag from the helper binaries we ship.
+
+    A downloaded DMG marks every file inside the .app as quarantined. The user
+    clears Gatekeeper once for RipWave.app itself ("Open Anyway"), but the
+    yt-dlp/ffmpeg it then spawns are separate unsigned-by-Apple executables and
+    on some macOS versions the first exec of each gets killed with a second
+    "cannot verify the developer" dialog. Clearing the flag ourselves removes
+    that dialog. Best-effort: a read-only bundle (still on the DMG) just fails.
+    """
+    if sys.platform != "darwin":
+        return
+    for name in ("yt-dlp", "ffmpeg", "ffprobe"):
+        path = _bundled(name)
+        if not path:
+            continue
+        try:
+            subprocess.run(["xattr", "-d", "com.apple.quarantine", path],
+                           capture_output=True, timeout=5)
+        except Exception:
+            pass
 
 
 def _resolve_output(dests: list[str], mode: str, started: float) -> str:
@@ -495,6 +535,7 @@ class App(tk.Tk):
 
     def _startup_update(self):
         self.after(0, self._set_status, "checking for updates...", C_YELLOW)
+        _strip_quarantine()
         try:
             proc = subprocess.run(
                 [YTDLP, "-U"],
@@ -578,8 +619,8 @@ class App(tk.Tk):
         threading.Thread(target=self._run, args=(target, self._mode), daemon=True).start()
 
     def _run(self, target, mode):
-        # On Windows ffmpeg.exe is bundled in SCRIPT_DIR; on macOS/Linux it's on PATH
-        ffmpeg_args = ["--ffmpeg-location", SCRIPT_DIR] if sys.platform == "win32" else []
+        # Windows installer and macOS .app bundle ffmpeg in SCRIPT_DIR; Linux uses PATH
+        ffmpeg_args = ["--ffmpeg-location", SCRIPT_DIR] if BUNDLED_FFMPEG else []
         base = [YTDLP,
                 # --ignore-config is load-bearing, not hygiene. yt-dlp merges any config
                 # it finds (%APPDATA%\yt-dlp\config, ~/yt-dlp.conf, the cwd, ...) into
@@ -718,6 +759,42 @@ class App(tk.Tk):
         self.status_lbl.config(fg=color)
 
 
+def _selftest() -> int:
+    """`RipWave --selftest`: prove a packaged build can start, without opening a window.
+
+    Used by the macOS build (build-mac.sh) and CI. Fails if a bundled helper is
+    missing or won't execute, or if Tk can't be initialised.
+    """
+    print(f"RipWave {VERSION} on {sys.platform} ({SCRIPT_DIR})")
+    ok = True
+    for label, path in (("yt-dlp", YTDLP), ("ffmpeg", BUNDLED_FFMPEG), ("ffprobe", _ffprobe_bin())):
+        if not path:
+            print(f"  {label:8s} MISSING")
+            ok = False
+            continue
+        try:
+            out = subprocess.run([path, "-version" if label != "yt-dlp" else "--version"],
+                                 capture_output=True, text=True, timeout=30,
+                                 creationflags=_NO_WINDOW)
+            first = (out.stdout or out.stderr).strip().splitlines()[0] if (out.stdout or out.stderr) else ""
+            print(f"  {label:8s} {'ok ' if out.returncode == 0 else 'ERR'} {path} — {first}")
+            ok = ok and out.returncode == 0
+        except Exception as e:  # noqa: BLE001
+            print(f"  {label:8s} ERR {path} — {e}")
+            ok = False
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.destroy()
+        print("  tk       ok")
+    except Exception as e:  # noqa: BLE001
+        print(f"  tk       ERR {e}")
+        ok = False
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
+    if "--selftest" in sys.argv[1:]:
+        sys.exit(_selftest())
     app = App()
     app.mainloop()

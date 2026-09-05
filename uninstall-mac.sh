@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
-set -euo pipefail
-[ -f "$HOME/Desktop/RipWave.command" ] && rm "$HOME/Desktop/RipWave.command" && echo "✓  Removed Desktop launcher"
-echo "Done. yt-dlp and ffmpeg are kept (system-wide). Remove with: brew uninstall yt-dlp ffmpeg"
+# RipWave — macOS uninstaller
+# Removes the DMG-installed app and/or the launcher created by install-mac.sh.
+set -u
+removed=0
+for target in "/Applications/RipWave.app" "$HOME/Applications/RipWave.app" "$HOME/Desktop/RipWave.command"; do
+    if [[ -e "$target" ]]; then
+        rm -rf "$target" && echo "✓  removed $target" && removed=1
+    fi
+done
+[[ $removed -eq 1 ]] || echo "   nothing to remove — RipWave was not installed"
+echo "   (yt-dlp/ffmpeg installed via Homebrew by the script installer are left alone: brew uninstall yt-dlp ffmpeg)"
