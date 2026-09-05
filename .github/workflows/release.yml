@@ -107,15 +107,19 @@ jobs:
             throw "RipWave-Setup.exe was not produced"
           }
 
-      - name: Package portable zip
-        run: Compress-Archive -Path dist/* -DestinationPath RipWave-windows.zip
+      # Flatten to the repo root: upload-artifact keeps subfolders, and the
+      # release job publishes release/* (no recursion).
+      - name: Package release assets
+        run: |
+          Compress-Archive -Path dist/* -DestinationPath RipWave-windows.zip
+          Move-Item installer/RipWave-Setup.exe RipWave-Setup.exe
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           if-no-files-found: error
           path: |
-            installer/RipWave-Setup.exe
+            RipWave-Setup.exe
             RipWave-windows.zip
 
   # ── macOS: RipWave.app in a DMG, one per CPU ───────────────────────────────
@@ -162,7 +166,10 @@ jobs:
           merge-multiple: true
 
       - name: List assets
-        run: ls -la release
+        run: |
+          ls -la release
+          test -f release/RipWave-Setup.exe
+          test -f release/RipWave-macOS-arm64.dmg
 
       - name: Move rolling 'latest' tag
         if: needs.meta.outputs.rolling == 'true'
